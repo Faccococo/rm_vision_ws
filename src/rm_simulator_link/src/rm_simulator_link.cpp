@@ -24,10 +24,12 @@ public:
         RCLCPP_INFO(get_logger(), "RMSimulatorLink has been started.");
         joint_sub = this->create_subscription<sensor_msgs::msg::JointState>("/joint", 10, std::bind(&RMSimulatorLink::joint_callback, this, std::placeholders::_1));
         tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-    }   
+    }
 
     void joint_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
     {
+        RCLCPP_INFO(get_logger(), "Received joint state message");
+
         yaw = msg->position[0];
         pitch = msg->position[1];
         geometry_msgs::msg::TransformStamped t;
