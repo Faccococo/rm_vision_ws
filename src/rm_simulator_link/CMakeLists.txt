@@ -7,9 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_definitions(-Wall -Werror)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # find dependencies
 find_package(ament_cmake_auto REQUIRED)
@@ -20,7 +18,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}
-  PLUGIN RMSimulatorLink::RmSimulatorLink
+  PLUGIN RMSimulatorLink::SimulatorLinkNode
   EXECUTABLE rm_simulator_link_node
 )
 
