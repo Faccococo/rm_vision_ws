@@ -24,6 +24,8 @@
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include "auto_aim_interfaces/msg/target.hpp"
 #include "auto_aim_interfaces/msg/tracker_info.hpp"
+#include "auto_aim_interfaces/msg/armor.hpp"
+#include "auto_aim_interfaces/msg/point2d.hpp"
 
 namespace rm_auto_aim
 {
@@ -33,10 +35,15 @@ class ArmorTrackerNode : public rclcpp::Node
 public:
   explicit ArmorTrackerNode(const rclcpp::NodeOptions & options);
 
+  using Armors = auto_aim_interfaces::msg::Armors;
+  using Armor = auto_aim_interfaces::msg::Armor;
+
 private:
   void armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_ptr);
 
   void publishMarkers(const auto_aim_interfaces::msg::Target & target_msg);
+
+  void fixArmorYaw(Armor& armor);
 
   // Maximum allowable armor distance in the XOY plane
   double max_armor_distance_;
@@ -44,6 +51,10 @@ private:
   // The time when the last message was received
   rclcpp::Time last_time_;
   double dt_;
+
+  // camera_info
+  std::array<double, 9> camera_matrix_;
+  std::vector<double> distortion_coefficients_;                     
 
   // Armor tracker
   double s2qxyz_, s2qyaw_, s2qr_;

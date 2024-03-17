@@ -4,6 +4,7 @@
 // STD
 #include <memory>
 #include <vector>
+#include <iostream>
 
 namespace rm_auto_aim
 {
@@ -183,6 +184,9 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
 
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
+  std::copy(armors_msg->camera_matrix.begin(), armors_msg->camera_matrix.end(), camera_matrix_.begin());
+  this->distortion_coefficients_.assign(armors_msg->distortion_coefficients.begin(), armors_msg->distortion_coefficients.end());
+  std::cout << "camera_matrix: " << camera_matrix_[0] << std::endl;
   // Tranform armor position from image frame to world coordinate
   for (auto & armor : armors_msg->armors) {
     geometry_msgs::msg::PoseStamped ps;

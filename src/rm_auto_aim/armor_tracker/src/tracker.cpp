@@ -42,7 +42,7 @@ void Tracker::init(const Armors::SharedPtr & armors_msg)
       tracked_armor = armor;
     }
   }
-
+  
   initEKF(tracked_armor);
   RCLCPP_DEBUG(rclcpp::get_logger("armor_tracker"), "Init EKF!");
 
@@ -158,6 +158,7 @@ void Tracker::initEKF(const Armor & a)
   double za = a.pose.position.z;
   last_yaw_ = 0;
   double yaw = orientationToYaw(a.pose.orientation);
+  
 
   // Set initial position at 0.2m behind the target
   target_state = Eigen::VectorXd::Zero(9);
