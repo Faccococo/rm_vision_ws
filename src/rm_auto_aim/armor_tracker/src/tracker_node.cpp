@@ -4,7 +4,6 @@
 // STD
 #include <memory>
 #include <vector>
-#include <iostream>
 
 namespace rm_auto_aim
 {
@@ -182,11 +181,23 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/tracker/marker", 10);
 }
 
+void ArmorTrackerNode::fixArmorYaw(Armor& armor){
+  // get initial armor yaw
+  tf2::Quaternion tf_q;
+  tf2::fromMsg(armor.pose.orientation, tf_q);
+  double roll, pitch, yaw;
+  tf2::Matrix3x3(tf_q).getRPY(roll, pitch, yaw);
+  
+
+  
+}
+
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
+  // set camera_info
   std::copy(armors_msg->camera_matrix.begin(), armors_msg->camera_matrix.end(), camera_matrix_.begin());
   this->distortion_coefficients_.assign(armors_msg->distortion_coefficients.begin(), armors_msg->distortion_coefficients.end());
-  std::cout << "camera_matrix: " << camera_matrix_[0] << std::endl;
+  
   // Tranform armor position from image frame to world coordinate
   for (auto & armor : armors_msg->armors) {
     geometry_msgs::msg::PoseStamped ps;
@@ -198,6 +209,9 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       RCLCPP_ERROR(get_logger(), "Error while transforming %s", ex.what());
       return;
     }
+
+    // Fix armor yaw
+    fixArmorYaw(armor);
   }
 
   // Filter abnormal armors
