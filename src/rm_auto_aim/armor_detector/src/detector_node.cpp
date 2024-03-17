@@ -128,10 +128,16 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         tf2::Quaternion tf2_q;
         tf2_rotation_matrix.getRotation(tf2_q);
         armor_msg.pose.orientation = tf2::toMsg(tf2_q);
-
+        
         // Fill the distance to image center
         armor_msg.distance_to_image_center = pnp_solver_->calculateDistanceToCenter(armor.center);
-
+        for (const auto& point : armor.points) {
+          auto_aim_interfaces::msg::Point2d p;
+          p.x = point.x;
+          p.y = point.y;
+          armor_msg.armor_points.emplace_back(p);
+        }
+        
         // Fill the markers
         armor_marker_.id++;
         armor_marker_.scale.y = armor.type == ArmorType::SMALL ? 0.135 : 0.23;
@@ -147,6 +153,8 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         RCLCPP_WARN(this->get_logger(), "PnP failed!");
       }
     }
+    armors_msg_.camera_matrix.assign(cam_info_->k.begin(), cam_info_->k.end());
+    armors_msg_.distortion_coefficients.assign(cam_info_->d.begin(), cam_info_->d.end());
 
     // Publishing detected armors
     armors_pub_->publish(armors_msg_);

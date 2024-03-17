@@ -54,11 +54,12 @@ struct Armor
       left_light = l2, right_light = l1;
     }
     center = (left_light.center + right_light.center) / 2;
+    points = {left_light.top, left_light.bottom, right_light.top, right_light.bottom};
   }
-
   // Light pairs part
   Light left_light, right_light;
   cv::Point2f center;
+  std::vector<cv::Point2f> points; // left-top, left-bottom, right-bottom, right-top
   ArmorType type;
 
   // Number part
