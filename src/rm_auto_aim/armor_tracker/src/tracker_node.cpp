@@ -207,14 +207,56 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   large_armor_points_.emplace_back(cv::Point3f(0, -large_half_y, -large_half_z));
 }
 
-void ArmorTrackerNode::fixArmorYaw(Armor & armor, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
+void ArmorTrackerNode::fixArmorYaw(
+  Armor & armor, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // get initial armor yaw
-  tf2::Quaternion tf_q;
-  tf2::fromMsg(armor.pose.orientation, tf_q);
-  double roll, pitch, yaw;
-  tf2::Matrix3x3(tf_q).getRPY(roll, pitch, yaw);
-  double loss = calLoss(armor, yaw, armors_msg);
+  // tf2::Quaternion tf_q;
+  // tf2::fromMsg(armor.pose.orientation, tf_q);
+  // double roll, pitch, yaw;
+  // tf2::Matrix3x3(tf_q).getRPY(roll, pitch, yaw);
+
+  // double gap = 1.0;
+  // int cnt = 0;
+  // double left = 0, right = 180;
+  // double loss_past = 0;
+  // double loss_left = calLoss(armor, (left + right) / 2 - gap, armors_msg);
+  // double loss_right = calLoss(armor, (left + right) / 2 + gap, armors_msg);
+  // while (right - left > gap && cnt < 100) {
+  //   double mid = (left + right) / 2;
+  //   double loss_left = calLoss(armor, (left + right) / 2 - gap, armors_msg);
+
+  //   if (loss_left < loss_right) {
+  //     right = mid;
+  //   } else {
+  //     left = mid;
+  //   }
+  //   cnt++;
+  // }
+  // double loss = calLoss(armor, (left + right) / 2.0, armor_loss);
+
+  double loss_past = 0.0;
+
+  for (int cnt = 0; cnt < max_iterations && right - left > gap; cnt++) {
+    double phi = (1.0 + sqrt(5.0)) / 2.0;
+
+    double left_new = right - gap / phi;
+    double right_new = left + gap / phi;
+
+    double loss_left = calLoss(armor, left_new, armors_msg);
+    double loss_right = calLoss(armor, right_new, armors_msg);
+
+    if (loss_left < loss_right) {
+      right = right_new;
+    } else {
+      left = left_new;
+    }
+    if (abs(loss_left - loss_past) < 1e-6) {
+      break;
+    }
+    loss_past = loss_left;
+  }
+
   RCLCPP_INFO(get_logger(), "Armor loss: %f", loss);
 }
 
@@ -223,7 +265,8 @@ double ArmorTrackerNode::euclideanDistance(const cv::Point2f & p1, const cv::Poi
   return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
 }
 
-double ArmorTrackerNode::calLoss(Armor & armor, double yaw, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
+double ArmorTrackerNode::calLoss(
+  Armor & armor, double yaw, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // range freedom (odom frame) and get orientation by origin yaw
   tf2::Quaternion odom_armor_q;
@@ -268,8 +311,7 @@ double ArmorTrackerNode::calLoss(Armor & armor, double yaw, const auto_aim_inter
   // calculate projection points
   std::vector<cv::Point2f> projected_points;
   auto object_points = armor.type == "small" ? small_armor_points_ : large_armor_points_;
-  cv::projectPoints(
-    object_points, rvec, tvec, camera_matrix, dist_coeffs, projected_points);
+  cv::projectPoints(object_points, rvec, tvec, camera_matrix, dist_coeffs, projected_points);
 
   // calculate loss
   double armor_loss = 0.0;
@@ -285,7 +327,7 @@ double ArmorTrackerNode::calLoss(Armor & armor, double yaw, const auto_aim_inter
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // set camera_info
-  
+
   // Tranform armor position from image frame to world coordinate
   for (auto & armor : armors_msg->armors) {
     geometry_msgs::msg::PoseStamped ps;
