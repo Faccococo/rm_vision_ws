@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <opencv2/opencv.hpp>
 
 #include "armor_tracker/tracker.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
@@ -44,6 +45,10 @@ private:
   void publishMarkers(const auto_aim_interfaces::msg::Target & target_msg);
 
   void fixArmorYaw(Armor& armor);
+
+  double calLoss(Armor& armor, double yaw);
+
+  double euclideanDistance(const cv::Point2f& p1, const cv::Point2f& p2);
 
   // Maximum allowable armor distance in the XOY plane
   double max_armor_distance_;
@@ -84,6 +89,17 @@ private:
   visualization_msgs::msg::Marker angular_v_marker_;
   visualization_msgs::msg::Marker armor_marker_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
+
+  
+  // Unit: mm
+  static constexpr float SMALL_ARMOR_WIDTH = 135;
+  static constexpr float SMALL_ARMOR_HEIGHT = 55;
+  static constexpr float LARGE_ARMOR_WIDTH = 225;
+  static constexpr float LARGE_ARMOR_HEIGHT = 55;
+
+  // Four vertices of armor in 3d
+  std::vector<cv::Point3f> small_armor_points_;
+  std::vector<cv::Point3f> large_armor_points_;
 };
 
 }  // namespace rm_auto_aim

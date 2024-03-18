@@ -179,25 +179,87 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   armor_marker_.color.a = 1.0;
   armor_marker_.color.r = 1.0;
   marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/tracker/marker", 10);
+
+  // Unit: m
+  constexpr double small_half_y = SMALL_ARMOR_WIDTH / 2.0 / 1000.0;
+  constexpr double small_half_z = SMALL_ARMOR_HEIGHT / 2.0 / 1000.0;
+  constexpr double large_half_y = LARGE_ARMOR_WIDTH / 2.0 / 1000.0;
+  constexpr double large_half_z = LARGE_ARMOR_HEIGHT / 2.0 / 1000.0;
+
+  // Start from bottom left in clockwise order
+  // Model coordinate: x forward, y left, z up
+  small_armor_points_.emplace_back(cv::Point3f(0, small_half_y, -small_half_z));
+  small_armor_points_.emplace_back(cv::Point3f(0, small_half_y, small_half_z));
+  small_armor_points_.emplace_back(cv::Point3f(0, -small_half_y, small_half_z));
+  small_armor_points_.emplace_back(cv::Point3f(0, -small_half_y, -small_half_z));
+
+  large_armor_points_.emplace_back(cv::Point3f(0, large_half_y, -large_half_z));
+  large_armor_points_.emplace_back(cv::Point3f(0, large_half_y, large_half_z));
+  large_armor_points_.emplace_back(cv::Point3f(0, -large_half_y, large_half_z));
+  large_armor_points_.emplace_back(cv::Point3f(0, -large_half_y, -large_half_z));
 }
 
-void ArmorTrackerNode::fixArmorYaw(Armor& armor){
+void ArmorTrackerNode::fixArmorYaw(Armor & armor)
+{
   // get initial armor yaw
   tf2::Quaternion tf_q;
   tf2::fromMsg(armor.pose.orientation, tf_q);
   double roll, pitch, yaw;
   tf2::Matrix3x3(tf_q).getRPY(roll, pitch, yaw);
-  
+}
 
-  
+double ArmorTrackerNode::euclideanDistance(const cv::Point2f & p1, const cv::Point2f & p2)
+{
+  return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+}
+
+double ArmorTrackerNode::calLoss(Armor & armor, double yaw)
+{
+  // get rvec from yaw
+  tf2::Quaternion tf_q;
+  tf_q.setRPY(0, 15, yaw);
+  tf2::Matrix3x3 tf2_rotation_matrix(tf_q);
+  cv::Mat rotation_matrix(3, 3, CV_64F);
+
+  // get rotation_matrix
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      rotation_matrix.at<double>(i, j) = tf2_rotation_matrix[i][j];
+    }
+  }
+
+  cv::Mat rvec;
+  cv::Rodrigues(rotation_matrix, rvec);
+
+  // get tvec from armor position
+  cv::Mat tvec =
+    (cv::Mat_<double>(3, 1) << armor.pose.position.x, armor.pose.position.y, armor.pose.position.z);
+
+  // calculate projection points
+  std::vector<cv::Point2f> projected_points;
+  auto object_points = armor.type == "small" ? small_armor_points_ : large_armor_points_;
+  cv::projectPoints(
+    object_points, rvec, tvec, camera_matrix_, distortion_coefficients_, projected_points);
+
+  // calculate loss
+  double armor_loss = 0.0;
+  for (int i = 0; i < 4; i++) {
+    auto point = armor.armor_points[i];
+    cv::Point2f cv_point = cv::Point2f(point.x, point.y);
+    double loss = euclideanDistance(cv_point, projected_points[i]);
+    armor_loss += loss;
+  }
+  return armor_loss;
 }
 
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // set camera_info
-  std::copy(armors_msg->camera_matrix.begin(), armors_msg->camera_matrix.end(), camera_matrix_.begin());
-  this->distortion_coefficients_.assign(armors_msg->distortion_coefficients.begin(), armors_msg->distortion_coefficients.end());
-  
+  std::copy(
+    armors_msg->camera_matrix.begin(), armors_msg->camera_matrix.end(), camera_matrix_.begin());
+  this->distortion_coefficients_.assign(
+    armors_msg->distortion_coefficients.begin(), armors_msg->distortion_coefficients.end());
+
   // Tranform armor position from image frame to world coordinate
   for (auto & armor : armors_msg->armors) {
     geometry_msgs::msg::PoseStamped ps;
