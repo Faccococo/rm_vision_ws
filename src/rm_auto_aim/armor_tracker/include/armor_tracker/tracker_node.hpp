@@ -9,6 +9,7 @@
 #include <tf2_ros/create_timer_ros.h>
 #include <tf2_ros/message_filter.h>
 #include <tf2_ros/transform_listener.h>
+#include <sensor_msgs/msg/camera_info.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_srvs/srv/trigger.hpp>
@@ -44,9 +45,9 @@ private:
 
   void publishMarkers(const auto_aim_interfaces::msg::Target & target_msg);
 
-  void fixArmorYaw(Armor& armor);
+  void fixArmorYaw(Armor& armor, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg);
 
-  double calLoss(Armor& armor, double yaw);
+  double calLoss(Armor& armor, double yaw, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg);
 
   double euclideanDistance(const cv::Point2f& p1, const cv::Point2f& p2);
 
@@ -58,8 +59,7 @@ private:
   double dt_;
 
   // camera_info
-  std::array<double, 9> camera_matrix_;
-  std::vector<double> distortion_coefficients_;                     
+  std::shared_ptr<sensor_msgs::msg::CameraInfo> camera_info;                  
 
   // Armor tracker
   double s2qxyz_, s2qyaw_, s2qr_;
@@ -100,6 +100,11 @@ private:
   // Four vertices of armor in 3d
   std::vector<cv::Point3f> small_armor_points_;
   std::vector<cv::Point3f> large_armor_points_;
+
+  // Camera info part
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
+  cv::Mat camera_matrix;
+  cv::Mat dist_coeffs;
 };
 
 }  // namespace rm_auto_aim

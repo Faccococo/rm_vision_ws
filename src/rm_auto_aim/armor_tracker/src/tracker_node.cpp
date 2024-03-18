@@ -186,6 +186,14 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   constexpr double large_half_y = LARGE_ARMOR_WIDTH / 2.0 / 1000.0;
   constexpr double large_half_z = LARGE_ARMOR_HEIGHT / 2.0 / 1000.0;
 
+  cam_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+    "/camera_info", rclcpp::SensorDataQoS(),
+    [this](sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info) {
+      camera_matrix = cv::Mat(3, 3, CV_64F, const_cast<double *>(camera_info->k.data())).clone();
+      dist_coeffs = cv::Mat(1, 5, CV_64F, const_cast<double *>(camera_info->d.data())).clone();
+      cam_info_sub_.reset();
+    });
+
   // Start from bottom left in clockwise order
   // Model coordinate: x forward, y left, z up
   small_armor_points_.emplace_back(cv::Point3f(0, small_half_y, -small_half_z));
@@ -199,13 +207,15 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   large_armor_points_.emplace_back(cv::Point3f(0, -large_half_y, -large_half_z));
 }
 
-void ArmorTrackerNode::fixArmorYaw(Armor & armor)
+void ArmorTrackerNode::fixArmorYaw(Armor & armor, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // get initial armor yaw
   tf2::Quaternion tf_q;
   tf2::fromMsg(armor.pose.orientation, tf_q);
   double roll, pitch, yaw;
   tf2::Matrix3x3(tf_q).getRPY(roll, pitch, yaw);
+  double loss = calLoss(armor, yaw, armors_msg);
+  RCLCPP_INFO(get_logger(), "Armor loss: %f", loss);
 }
 
 double ArmorTrackerNode::euclideanDistance(const cv::Point2f & p1, const cv::Point2f & p2)
@@ -213,12 +223,31 @@ double ArmorTrackerNode::euclideanDistance(const cv::Point2f & p1, const cv::Poi
   return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
 }
 
-double ArmorTrackerNode::calLoss(Armor & armor, double yaw)
+double ArmorTrackerNode::calLoss(Armor & armor, double yaw, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
-  // get rvec from yaw
-  tf2::Quaternion tf_q;
-  tf_q.setRPY(0, 15, yaw);
-  tf2::Matrix3x3 tf2_rotation_matrix(tf_q);
+  // range freedom (odom frame) and get orientation by origin yaw
+  tf2::Quaternion odom_armor_q;
+  odom_armor_q.setRPY(0, 15, yaw);
+  armor.pose.orientation = tf2::toMsg(odom_armor_q);
+
+  // transform orientation camera frame
+  geometry_msgs::msg::PoseStamped ps;
+  ps.header = armors_msg->header;
+  ps.pose = armor.pose;
+
+  geometry_msgs::msg::Pose cam_pose;
+  try {
+    cam_pose = tf2_buffer_->transform(ps, armors_msg->header.frame_id).pose;
+  } catch (const tf2::ExtrapolationException & ex) {
+    RCLCPP_ERROR(get_logger(), "Error while transforming %s", ex.what());
+    return -1;
+  }
+
+  // get camera-base quaternion & rotation matrix
+  tf2::Quaternion cam_armor_q;
+  tf2::fromMsg(cam_pose.orientation, cam_armor_q);
+
+  tf2::Matrix3x3 tf2_rotation_matrix(cam_armor_q);
   cv::Mat rotation_matrix(3, 3, CV_64F);
 
   // get rotation_matrix
@@ -228,18 +257,19 @@ double ArmorTrackerNode::calLoss(Armor & armor, double yaw)
     }
   }
 
+  // get rvec from rotation_matrix
   cv::Mat rvec;
   cv::Rodrigues(rotation_matrix, rvec);
 
   // get tvec from armor position
   cv::Mat tvec =
-    (cv::Mat_<double>(3, 1) << armor.pose.position.x, armor.pose.position.y, armor.pose.position.z);
+    (cv::Mat_<double>(3, 1) << cam_pose.position.x, cam_pose.position.y, cam_pose.position.z);
 
   // calculate projection points
   std::vector<cv::Point2f> projected_points;
   auto object_points = armor.type == "small" ? small_armor_points_ : large_armor_points_;
   cv::projectPoints(
-    object_points, rvec, tvec, camera_matrix_, distortion_coefficients_, projected_points);
+    object_points, rvec, tvec, camera_matrix, dist_coeffs, projected_points);
 
   // calculate loss
   double armor_loss = 0.0;
@@ -255,11 +285,7 @@ double ArmorTrackerNode::calLoss(Armor & armor, double yaw)
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // set camera_info
-  std::copy(
-    armors_msg->camera_matrix.begin(), armors_msg->camera_matrix.end(), camera_matrix_.begin());
-  this->distortion_coefficients_.assign(
-    armors_msg->distortion_coefficients.begin(), armors_msg->distortion_coefficients.end());
-
+  
   // Tranform armor position from image frame to world coordinate
   for (auto & armor : armors_msg->armors) {
     geometry_msgs::msg::PoseStamped ps;
@@ -273,7 +299,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
     }
 
     // Fix armor yaw
-    fixArmorYaw(armor);
+    fixArmorYaw(armor, armors_msg);
   }
 
   // Filter abnormal armors

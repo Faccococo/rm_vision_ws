@@ -153,9 +153,6 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         RCLCPP_WARN(this->get_logger(), "PnP failed!");
       }
     }
-    armors_msg_.camera_matrix.assign(cam_info_->k.begin(), cam_info_->k.end());
-    armors_msg_.distortion_coefficients.assign(cam_info_->d.begin(), cam_info_->d.end());
-
     // Publishing detected armors
     armors_pub_->publish(armors_msg_);
 
