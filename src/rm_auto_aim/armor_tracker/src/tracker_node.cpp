@@ -210,54 +210,29 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
 void ArmorTrackerNode::fixArmorYaw(
   Armor & armor, const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
-  // get initial armor yaw
   // tf2::Quaternion tf_q;
   // tf2::fromMsg(armor.pose.orientation, tf_q);
   // double roll, pitch, yaw;
   // tf2::Matrix3x3(tf_q).getRPY(roll, pitch, yaw);
+  // calLoss(armor, yaw, armors_msg);
 
-  // double gap = 1.0;
-  // int cnt = 0;
-  // double left = 0, right = 180;
-  // double loss_past = 0;
-  // double loss_left = calLoss(armor, (left + right) / 2 - gap, armors_msg);
-  // double loss_right = calLoss(armor, (left + right) / 2 + gap, armors_msg);
-  // while (right - left > gap && cnt < 100) {
-  //   double mid = (left + right) / 2;
-  //   double loss_left = calLoss(armor, (left + right) / 2 - gap, armors_msg);
 
-  //   if (loss_left < loss_right) {
-  //     right = mid;
-  //   } else {
-  //     left = mid;
-  //   }
-  //   cnt++;
-  // }
-  // double loss = calLoss(armor, (left + right) / 2.0, armor_loss);
-
-  double loss_past = 0.0;
-
-  for (int cnt = 0; cnt < max_iterations && right - left > gap; cnt++) {
-    double phi = (1.0 + sqrt(5.0)) / 2.0;
-
-    double left_new = right - gap / phi;
-    double right_new = left + gap / phi;
-
-    double loss_left = calLoss(armor, left_new, armors_msg);
-    double loss_right = calLoss(armor, right_new, armors_msg);
-
+  double gap = 1 / (2 * CV_PI);
+  int cnt = 0;
+  double left = -CV_PI, right = CV_PI;
+  while (right - left > gap && cnt < 100) {
+    double mid = (left + right) / 2;
+    double loss_left = calLoss(armor, (left + right) / 2 - gap, armors_msg);
+    double loss_right = calLoss(armor, (left + right) / 2 + gap, armors_msg);
     if (loss_left < loss_right) {
-      right = right_new;
+      right = mid;
     } else {
-      left = left_new;
+      left = mid;
     }
-    if (abs(loss_left - loss_past) < 1e-6) {
-      break;
-    }
-    loss_past = loss_left;
+    cnt++;
   }
-
-  RCLCPP_INFO(get_logger(), "Armor loss: %f", loss);
+  double loss = calLoss(armor, (left + right) / 2, armors_msg);
+  RCLCPP_INFO(get_logger(), "loss: %f", loss);
 }
 
 double ArmorTrackerNode::euclideanDistance(const cv::Point2f & p1, const cv::Point2f & p2)
@@ -270,7 +245,7 @@ double ArmorTrackerNode::calLoss(
 {
   // range freedom (odom frame) and get orientation by origin yaw
   tf2::Quaternion odom_armor_q;
-  odom_armor_q.setRPY(0, 15, yaw);
+  odom_armor_q.setRPY(0, 15 / (2 * CV_PI) , yaw);
   armor.pose.orientation = tf2::toMsg(odom_armor_q);
 
   // transform orientation camera frame
@@ -280,7 +255,7 @@ double ArmorTrackerNode::calLoss(
 
   geometry_msgs::msg::Pose cam_pose;
   try {
-    cam_pose = tf2_buffer_->transform(ps, armors_msg->header.frame_id).pose;
+    cam_pose = tf2_buffer_->transform(ps, "camera_optical_frame").pose;
   } catch (const tf2::ExtrapolationException & ex) {
     RCLCPP_ERROR(get_logger(), "Error while transforming %s", ex.what());
     return -1;
@@ -313,12 +288,17 @@ double ArmorTrackerNode::calLoss(
   auto object_points = armor.type == "small" ? small_armor_points_ : large_armor_points_;
   cv::projectPoints(object_points, rvec, tvec, camera_matrix, dist_coeffs, projected_points);
 
+  // RCLCPP_INFO(get_logger(), "armor_points: %f, %f", armor.armor_points[0].x, armor.armor_points[0].y);
+  // RCLCPP_INFO(get_logger(), "projected_points: %f, %f", projected_points[0].x, projected_points[0].y);
+  // RCLCPP_INFO(get_logger(), "tvec: %f, %f, %f", tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
+  // RCLCPP_INFO(get_logger(), "armor_pose: %f, %f, %f", armor.pose.position.x, armor.pose.position.y, armor.pose.position.z);
+
   // calculate loss
   double armor_loss = 0.0;
   for (int i = 0; i < 4; i++) {
     auto point = armor.armor_points[i];
     cv::Point2f cv_point = cv::Point2f(point.x, point.y);
-    double loss = euclideanDistance(cv_point, projected_points[i]);
+    double loss = euclideanDistance(cv_point, projected_points[i]) / std::abs(armor.pose.position.z);
     armor_loss += loss;
   }
   return armor_loss;
@@ -335,6 +315,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
     ps.pose = armor.pose;
     try {
       armor.pose = tf2_buffer_->transform(ps, target_frame_).pose;
+      armors_msg->header.frame_id = target_frame_;
     } catch (const tf2::ExtrapolationException & ex) {
       RCLCPP_ERROR(get_logger(), "Error while transforming %s", ex.what());
       return;

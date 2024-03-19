@@ -110,7 +110,8 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         // Fill basic info
         armor_msg.type = ARMOR_TYPE_STR[static_cast<int>(armor.type)];
         armor_msg.number = armor.number;
-
+        // RCLCPP_INFO(
+        //   this->get_logger(), "tvec: %f %f %f", tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
         // Fill pose
         armor_msg.pose.position.x = tvec.at<double>(0);
         armor_msg.pose.position.y = tvec.at<double>(1);
@@ -131,6 +132,7 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         
         // Fill the distance to image center
         armor_msg.distance_to_image_center = pnp_solver_->calculateDistanceToCenter(armor.center);
+        
         for (const auto& point : armor.points) {
           auto_aim_interfaces::msg::Point2d p;
           p.x = point.x;
